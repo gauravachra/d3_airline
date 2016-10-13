@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+svg {
+  font: 10px sans-serif; 
+}
+table {
+  font: 14px sans-serif; 
+}
+.states {
+  fill: #ccc;
+  stroke: #fff;
+}
+div.tooltip {	
+    position: absolute;			
+    text-align: center;			
+    padding: 5px;				
+    font: 12px sans-serif;		
+    background: lightsteelblue;	
+    border: 0px;		
+    border-radius: 2px;			
+    pointer-events: none;			
+}
+.mapcircle {
+  fill-opacity: .8;
+  stroke: #000;
+}
+
+.legend rect {
+  fill:white;
+  stroke:black;
+  opacity:0.8;}
+  
+table {
+    border-collapse: collapse;
+}
+
+table, th, td {
+    border: 1px solid grey;
+}
+
+</style>
+<body>
+
+<table  cellpadding=5px>
+<tr>
+<td id="chart_cell"> </td>
+<td id="airline_selection" valign="top"><br><br><b>Airline Filter</b><br><br></td>
+</tr>
+<tr>
+<td colspan="2">
+<b>Summary</b>
+<br>
+This visual shows the coverage of the USA cities by US Domestic airlines. The size of the circle denotes the total flights operated by that airline from that airport
+for the time duration, Jan 2012-Dec 2015.
+<br>
+<br>
+Below are some of the observations
+<br>
+<li>Hartsfield-Jackson Atlanta International , Chicago O'Hare International , Dallas/Fort Worth International and Denver International stand out as the top 4 airports
+<li>Coverage of some of the regional airlines is starkly clear such as Alaska Airlines and Hawaii Airlines. These airlines are the major operators in their namesake geographies.
+<li>Southwest Airline is the major airline for most of the non-top 10 airports in South West
+<li>Another airline that stands out is SkyWest Airline. It is a major airline for the US North-West Region.
+<li>ExpressJet Airlines has a good coverage in the US East and Middle region. 
+<li>Atlanta being the largest airport in terms of number of flights is basically a Delta Hub with Delta operating almost 57% of the flights.
+ 
+</td>
+</tr>
+</table>
+<script src="js/d3.v3.min.js"></script>
+<script src="js/topojson.v1.min.js"></script>
+<script src="js/queue.v1.min.js"></script>
+<script src="js/d3.legend.js"></script>
+<script src="js/d3.tip.v0.6.3.js"></script>
+<script>
+
+var width = 900,
+    height = 580;
+
+//radius scale for the circle.
+var radius = d3.scale.sqrt();
+    
+// Define the div for the tooltip
+var div_tooltip = d3.select("body").append("div")	
+    .attr("class", "tooltip")				
+    .style("opacity", 0);
+    
+var color = d3.scale.category20();
+
+var geo_path = d3.geo.path();
+var map_projection = geo_path.projection().scale(1000);
+
+var svg = d3.select("#chart_cell").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+queue()
+    .defer(d3.json, "data/us.json")
+    .defer(d3.csv, "data/airline_airport_coverage.csv")
+    .await(ready);
+
+//Declare the tip function    
+var tip = d3.tip()
+	.attr('class', 'd3-tip')
+	.offset([50, 50])
+	.html(function(d) {
+	    console.log(d);
+	    return "<strong><b>" + d.values.airport_name + "</b></strong><br>" +
+		"Total Flights : "+d.values.total_flights;
+	});
+
+
+function process_data(dataset){
+    //This function will prepare the data and identify the top airline for each airport. 
+	var processed_data = dataset;
+	for(i=0;i<processed_data.length;i++)	{
+		total = 0;
+		for(j=0;j<processed_data[i].values.length;j++)
+			total = total + processed_data[i].values[j].values.total_flights
+		processed_data[i]['airport_name'] = processed_data[i].key.substring(0,processed_data[i].key.indexOf("|"));	
+		processed_data[i]['total_flights'] = total;
+		sorted_data = processed_data[i].values.sort(function(a,b){return b.values.total_flights - a.values.total_flights;});
+		processed_data[i].top_airline = sorted_data[0].key;
+		processed_data[i].top_airline_flights = sorted_data[0].values.total_flights;
+		processed_data[i].top_airline_flights_ratio = ((processed_data[i].top_airline_flights/total)*100).toFixed(2);
+		}
+	
+    return processed_data;
+}
+
+function ready(error, us, airportlocations) {
+  if (error) throw error;
+
+  svg.call(tip); //This will initialize tip
+  
+  //Create the USA Map
+  svg.append("g")
+     .attr("id","map_layout")
+     .append("path")
+     .attr("class", "states")	
+     .attr("transform","translate(-80,60)")
+     .datum(topojson.feature(us, us.objects.states))
+     .attr("d", geo_path);
+      
+      
+  //Add the title for the Chart.
+  svg.append("text")
+  	 	 .text("Coverage of USA Cities by Airlines")
+  	 	 .style("font-size","20px")
+  	 	 .style("font-weight","bold")
+  	 	 .attr("transform","translate(5,40)");
+  	 	 
+  //Add another line for a small description for the chart
+  	 svg.append("text")
+  	 	 .text("Data Range : Jan 2012-Dec 2015. Each Airport is colored by the major airline.Size of circle denotes total flights.")
+  	 	 .style("font-size","12px")
+  	  	 .attr("transform","translate(5,55)");
+      
+  // Lets group the data by airports first. 
+   var grouped_by_airport = d3.nest()
+  		.key(function(d) {return d.airport_name + "|" + d.nLon + "#" + d.nLat;})
+  		.key(function (d){return d.carrier_name;})
+  		.rollup(function(leaves) {          return {
+  											"total_flights": d3.sum(leaves, function(d) {return parseFloat(d.total_flights);})} })
+  		.entries(airportlocations);
+  
+  //Get the top airline for each airport. 
+  var processed_data_for_all_airport_map = process_data(grouped_by_airport);
+  debugger;
+  // Lets group the data by airlines. This will be used to display the map of individual airlines
+  var grouped_by_airline = d3.nest()
+        .key(function (d){return d.carrier_name;})
+  		.key(function(d) {return d.carrier_name + "|" + d.nLon + "#" + d.nLat;})
+  		.rollup(function(leaves) {          
+  											return {
+  											"airport_name": leaves[0].airport_name, 
+  											"total_flights": d3.sum(leaves, function(d) {return parseFloat(d.total_flights);})} })
+  		.entries(airportlocations);
+  
+  grouped_by_airline = grouped_by_airline.sort(function(a,b){return d3.ascending(a.key,b.key);})
+  
+  //Get the distinct values of airlines for the color scale.
+  var airline_name_list = [];
+  for(i=0;i<grouped_by_airline.length;i++)
+  		airline_name_list.push(grouped_by_airline[i].key);
+  
+  color.domain(airline_name_list);
+  //Set the domain and range of the radius scale.
+  radius.domain([d3.min(processed_data_for_all_airport_map,function(d){return d.total_flights;}),
+                 d3.max(processed_data_for_all_airport_map,function(d){return d.total_flights;})])
+        .range([1,30]);
+
+ //Create the form and attach properties. 
+    airline_form2 = d3.select("#airline_selection")
+				  .append("g")
+				  .append("div")
+				  	.attr("id","airline_radio")
+				  .selectAll("input")
+            .data(grouped_by_airline)
+            .enter()
+            .append("label")
+            	.html(function(d,i){
+            	    var airline_name = d.key;
+            	    return "<input type=radio id = AL_"+i+" name=alradio value="+i+">"+airline_name+"<br>";
+            	});
+            	
+    //Add the "All Airlines" option.
+  d3.select("#airline_radio")
+     .append("label")
+     .html("<input type=radio id=AL_-1 name=alradio value=-1><b>All Airlines</b><br>");
+     
+     
+            	d3.selectAll("[name=alradio]").on("change", function() {
+    				var id = this.value;
+    				if(id==-1)
+				  					{
+				  						draw(processed_data_for_all_airport_map,"Airport");
+				  					}
+				  					else {
+				  						draw(grouped_by_airline[id].values,"Airline");
+				  						}
+    				
+                 });
+
+  
+  //Select the "All Airlines" option in the form
+  document.getElementById("AL_-1").checked=true;
+  
+  //draw the default visualization. 
+  draw(processed_data_for_all_airport_map,"Airport");
+
+}
+
+function draw(data_to_plot,mode){
+//This function will draw and redraw the visualization based on the arguments passed. 
+	for (i = 0; i < data_to_plot.length; i++) { 
+    	vkey = data_to_plot[i].key;
+    	vLon = vkey.substring(vkey.indexOf("|")+1,vkey.indexOf("#"));
+    	vLat = vkey.substring(vkey.indexOf("#")+1);
+    	coords = map_projection([+vLon,+vLat]);
+    	data_to_plot[i].cx = coords[0];
+    	data_to_plot[i].cy = coords[1];
+    	data_to_plot[i].name = vkey.substring(0,vkey.indexOf("|"));
+       }
+
+	if(mode=="Airport"){
+	        //Remove the SVG Elements.
+			circle_chart = d3.select("#circle_chart");
+			circle_chart.remove();
+			
+			svg.append("g")
+				  .attr("id","circle_chart")
+				  .attr("transform","translate(-80,60)")
+				  .selectAll(".mapcircle")
+				  .data(data_to_plot)
+				  .enter()
+				  .append("circle")
+				  .attr("class", "mapcircle")
+				  .attr("fill",function(d){ return color(d.top_airline);})
+				  .attr("cx",function(d){ return d.cx;})
+				  .attr("cy",function(d){ return d.cy;})
+				  .attr("data-legend",function(d) { return d.top_airline; })
+				  .attr("r", function(d){return radius(d['total_flights']);})
+				  .on("mouseover", function(d) {		
+						div_tooltip.transition()		
+							.duration(200)		
+							.style("opacity", .9);		
+						div_tooltip.html("<strong><b>" + d.airport_name + "</b></strong><br>" +
+					"Total Flights : "+d.total_flights + "<br>"+
+					"Top Airline : "+d.top_airline + " <br> Flights Ratio : "+d.top_airline_flights_ratio +"%")	
+							.style("left", (d3.event.pageX) + "px")		
+							.style("top", (d3.event.pageY - 28) + "px");	
+						})					
+				  .on("mouseout", function(d) {		
+						div_tooltip.transition()		
+							.duration(500)		
+							.style("opacity", 0);	
+					});     
+
+			 //Add the legend. 
+			 legend = d3.select("#circle_chart").append("g")
+				.attr("class","legend")
+				.attr("transform","translate("+(width-100)+",300)")
+				.style("font-size","12px")
+				.call(d3.legend)
+         } //End of the mode=Airport section.
+      
+    if(mode=="Airline"){
+            //Remove the SVG elements first to redraw the visual
+			circle_chart = d3.select("#circle_chart");
+			circle_chart.remove();
+			svg.append("g")
+				  .attr("id","circle_chart")
+				  .attr("transform","translate(-80,60)")
+				  .selectAll(".mapcircle")
+				  .data(data_to_plot)
+				  .enter()
+				  .append("circle")
+				  .attr("class", "mapcircle")
+				  .attr("fill",function(d){ return color(d.name);})
+				  .attr("cx",function(d){ return d.cx;})
+				  .attr("cy",function(d){ return d.cy;})
+				  .attr("data-legend",function(d) { return d.key.substring(0,d.key.indexOf("|")); })
+				  .attr("r", function(d){return radius(d['values']['total_flights']);})
+				  .on("mouseover", function(d) {		
+						div_tooltip.transition()		
+							       .duration(200)		
+							       .style("opacity", .9);		
+						div_tooltip.html("<strong><b>" + d.values.airport_name + "</b></strong><br>" +
+										 "Total Flights : "+d.values.total_flights)	
+								   .style("left", (d3.event.pageX) + "px")		
+								   .style("top", (d3.event.pageY - 28) + "px");	
+						})					
+					.on("mouseout", function(d) {		
+						div_tooltip.transition()		
+							.duration(500)		
+							.style("opacity", 0);	
+					}); 
+		
+			 //Add the legend. 
+			 legend = d3.select("#circle_chart").append("g")
+				.attr("class","legend")
+				.attr("transform","translate("+(width-100)+",300)")
+				.style("font-size","12px")
+				.call(d3.legend)
+    }
+}
+
+
+</script>
+
+</body>

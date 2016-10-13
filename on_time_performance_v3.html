@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+svg {
+  font: 10px sans-serif; 
+}
+table {
+  font: 14px sans-serif; 
+}
+.d3-tip {
+        line-height:1;
+        padding:12px;
+        font:12px sans-serif;
+        background: rgba(0, 0, 0, 0.4);
+        color:#fff;
+        border-radius:2px;
+      }
+      
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+.x.axis path {
+  fill:none;
+  stroke:#000;
+  shape-rendering: crispEdges;
+}
+
+.line {
+  fill: none;
+}
+
+.legend rect {
+  fill:white;
+  stroke:black;
+  opacity:0.9;}
+  
+  table {
+    border-collapse: collapse;
+}
+
+table, th, td {
+    border: 1px solid grey;
+}
+
+</style>
+<body>
+<table cellpadding=5px>
+<tr>
+<td id="chart_cell"> </td>
+<td id="airport_selection" valign="top"><br><br><b>Airport Filter</b><br><br></td>
+</tr>
+<tr>
+<td colspan="2">
+<b>Summary</b>
+<br>
+Hartsfield-Jackson Atlanta International , Chicago O'Hare International , Dallas/Fort Worth International,  Denver International,  Los Angeles International, 
+George Bush Intercontinental/Houston,  Phoenix Sky Harbor International,  San Francisco International,  Las Vegas McCarran International and 
+Charlotte Douglas International are the top 10 US airports by number of flights. 
+<br><br>
+For these airports, looking at the average on time performance of the flights, below observations can be made.
+<li> The best performance over the last 3 years across any airport has been around 90%
+<li> Atlanta and Phoenix airports consistently outperform other airports in on-time performance
+<li> Chicago and San Francisco airports consistently underperform. 
+<li> In Nov 2013 and Sep-Oct 2015, the variation in On-Time performance of all airports gets down to around 5%. Except these months, 
+there is always a variation of around 15-20% amongst the best and poor performing airports. 
+
+
+</td>
+</tr>
+</table>
+<script src="js/d3.v3.js"></script>
+<script src="js/d3.legend.js"></script>
+<script src="js/d3.tip.v0.6.3.js"></script>
+<script>
+
+
+var margin = {top: 50, right: 30, bottom: 30, left: 50},
+    width = 800 - margin.left - margin.right,
+    height = 500 - margin.top - margin.bottom;
+
+//The date format in the data is month/day/year
+var parseDate = d3.time.format("%m/%d/%y").parse;
+
+// X scale is date. 
+var x = d3.time.scale()
+	.range([0,width]);
+	
+    
+// Y scale is linear. 
+var y = d3.scale.linear()
+    .range([height,0]);
+
+// color range. category10() constructs a new ordinal scale with a range of ten categorical colors:
+//color scale will be used for Airport Names
+var color = d3.scale.category10();
+
+//Tie xAxis with the x scale
+var xAxis = d3.svg.axis()
+    .scale(x)
+    .orient("bottom");
+
+//Tie yAxis with the y scale
+var yAxis = d3.svg.axis()
+    .scale(y)
+    .orient("left");
+
+//Create the line var and tie the x and y coordinates to the correct variables 
+var line = d3.svg.line()
+    .x(function(d) { return x(d.parsed_date); })
+    .y(function(d) { return y(d.OnTimePerCent); });
+    				
+    				
+//Mouseover tip. This will be displayed when we do mouseover on the small circle for each point
+var tip = d3.tip()
+	.attr('class', 'd3-tip')
+	.offset([120, 40])
+	.html(function(d) {
+	    return "<strong><b>" + d.AirportName + "</b></strong><br>" +
+		"Date : "+d.DateValue+ "<br>"+
+		"On Time % : "+ d.OnTimePerCent.toFixed(2) + " <br>"+
+		"Total Flights : "+d.TotalArrivals;
+	});
+
+    
+//Add the SVG element. 
+var svg = d3.select("#chart_cell").append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+//Load the data and draw the chart.
+d3.csv("data/airport_performance_data.csv", function(error, data) {
+
+	 //Set the domain for the color scale. 
+	 color.domain(d3.keys(data[0]).filter(function(key) { return key == "AirportName"; }));
+     svg.call(tip);
+
+	 //First we need to corerce the data into the right formats
+	 mapped_data = data.map( function (d) { 
+        return { 
+      		AirportName: d.AirportName,
+      		DateValue : d.DateValue,
+      		parsed_date: parseDate(d.DateValue), //Convert the date from string into Date object
+      		OnTimePerCent: +d.OnTimePerCent,
+      		TotalArrivals:+d.TotalArrivals
+       		}; 
+		});   
+  
+	 // then we need to nest the data on AirportName since we want to only draw one line per AirportName
+  	 nested_data = d3.nest().key(function(d) { return d.AirportName; }).entries(mapped_data);
+  	 //Sorting the data by name so that the airport names in legend and form are in alphabetical order.
+  	 nested_data = nested_data.sort(function(a,b){return d3.ascending(a.key,b.key);})
+
+	 //Set the domain for the x and y scales. 
+	 //x axis is set from the min value of the date field to the max value of the date field. 
+  	 x.domain([d3.min(nested_data, function(d) { return d3.min(d.values, function (d) { return d.parsed_date; }); }),
+             d3.max(nested_data, function(d) { return d3.max(d.values, function (d) { return d.parsed_date; }); })]);
+     y.domain([20,100]);
+                   
+  	 //Add a g element to the SVG for the X Axis. 
+  	 svg.append("g")
+     	 .attr("class", "x axis")
+      	 .attr("transform", "translate(0," + height + ")")
+      	 .call(xAxis);
+      	 
+     //Add a g element to the SVG for the Y Axis. 
+     svg.append("g")
+      	 .attr("class", "y axis")
+      	 .call(yAxis)
+       	 .append("text")
+      	 .attr("transform", "rotate(-90)")
+      	 .attr("y", -40)
+      	 .attr("x",-120)
+      	 .attr("dy", ".71em")
+      	 .style("text-anchor", "end")
+      	 .text("On Time Percentage %");
+      
+      //Add the title for the Chart.
+  	 svg.append("text")
+  	 	 .text("Flight On Time Performance% for Top 10 US Airports")
+  	 	 .style("font-size","20px")
+  	 	 .style("font-weight","bold")
+  	 	 .attr("transform","translate(-40,-25)");
+  	 	 
+  	 //Add another line for a small description for the chart
+  	 svg.append("text")
+  	 	 .text("By Month, Jan 2012-Dec 2015.")
+  	 	 .style("font-size","12px")
+  	  	 .attr("transform","translate(0,-9)");
+	
+	//Create the form and attach properties. 
+    airline_form = d3.select("#airport_selection")
+				  .append("g")
+				  .append("div")
+				  	.attr("id","airport_cbox")
+				  .selectAll("input")
+            .data(nested_data)
+            .enter()
+            .append("label")
+            	.html(function(d){
+            	    var airport_name = d.key;
+            	    var cbox_value = airport_name.slice(0,airport_name.indexOf(',')).replace(' ','');
+            		return "<input type=checkbox name=acbox value="+cbox_value+">"+airport_name+"<br>";
+            	});
+            	
+            	d3.selectAll("[name=acbox]").on("change", function() {
+    				var selected = this.value;
+    				var cbdiv = document.getElementById("airport_cbox");
+    				var cblist = cbdiv.getElementsByTagName("input");
+    				var values = [];
+    				for(i=0;i<cblist.length;i++){
+    					if (( cblist[i].type === 'checkbox' )&&(cblist[i].checked)){
+    						values.push(cblist[i].value);
+    						
+    					}
+    				}
+    				draw_chart(nested_data,values);
+                 });
+    d3.select("#airport_selection")
+          .append("div")
+          .attr("id","div_buttons")
+          	.html("<br>")
+          .append("input")
+          	.attr("type","button")
+          	.attr("value","Select All")
+          	.on("click",function() {
+          			var cbdiv = document.getElementById("airport_cbox");
+    				var cblist = cbdiv.getElementsByTagName("input");
+    				var values = [];
+    				for(i=0;i<cblist.length;i++){
+    					values.push(cblist[i].value);
+    					cblist[i].checked=true;
+    				}
+    				draw_chart(nested_data,values);
+          	});
+          	
+    d3.select("#div_buttons")
+    	.append("g")
+    	.html("&nbsp;&nbsp;&nbsp;");
+    d3.select("#div_buttons") 
+          .append("input")
+          	.attr("type","button")
+          	.attr("value","Clear")
+          	.on("click",function(){
+          			var cbdiv = document.getElementById("airport_cbox");
+    				var cblist = cbdiv.getElementsByTagName("input");
+    				var values = [];
+    				for(i=0;i<cblist.length;i++){
+    					cblist[i].checked=false;
+    				}
+    				values.push("All Airports");
+    				draw_chart(nested_data,values);
+          	});
+            
+	var values = [];
+	values.push("All Airports");
+    draw_chart(nested_data,values); //Draw the initial chart with all the values.
+    	});       
+    	
+
+//Function to check if an option is in the selected values in the form. 
+function is_selected(value_to_check,value_list){
+		var found = false;
+		value_to_check = value_to_check.slice(0,value_to_check.indexOf(',')).replace(' ','')
+		for (i=0;i<value_list.length;i++){
+      							if(value_to_check==value_list[i]){
+      								found = true;
+      							}
+      						}
+      	return found;
+	}
+
+//Main function which will DRAW the Line Chart + Legend. Axes are already drawn.    	
+function draw_chart(data_to_plot,selected_values){
+
+	 line_chart = d3.select("#line_chart");
+     line_chart.remove();
+     if(selected_values=="")
+     	selected_values = "All Airports";
+     	
+     var cities = svg.append("g").attr("id","line_chart")
+     	 .selectAll(".AirportName")
+         .data(nested_data, function(d) { return d.key; })
+      	 .enter().append("g")
+      	 .attr("class", "AirportName");
+
+  	 // Mouseover and Mouseout functions are added for the hover effect. It will double the size of the line when the mouse is over the line. 
+  	 cities.append("path")
+      	.attr("class", "line")
+      	.attr("d", function(d) { return line(d.values); })
+      	.attr("data-legend",function(d) { return d.key; })
+      	.attr("data-legend-pos",function(d,i) { return i; })
+      	.style("stroke", function(d) { return color(d.key); })
+      	.style("opacity",function(d) {
+      					var found = false;
+      					if(selected_values=="All Airports")
+      						return 0.4; //If nothing is selected in the form, then all the lines have equal opacity.
+      					else{
+      					if(is_selected(d.key,selected_values))	return 0.9; //For Airport selected, the opacity is 0.9
+      					else  	    return 0.1; //For airports not selected, the opacity is 0.1
+      					}
+      					})
+      	.style("stroke-width",4)
+      	.on("mouseover", function(d) { 
+      	                if(selected_values=="All Airports"){
+      	                    //The lines will get highlighted only when we are in the "All Airports" mode.
+      						d3.select(this)
+      						.style("opacity",1);
+  						}
+  						})                  
+	    .on("mouseout", function(d) {
+	    		        if(selected_values=="All Airports"){
+  						d3.select(this)
+  						.style("opacity",0.4);
+  						}
+  						});
+      									
+     
+     //Add the dots on the line chart. 
+     //mouse over on the dots will display the tooltip.
+      svg.select("#line_chart").selectAll(".dot")
+   	  	.data(mapped_data)
+   	  	.enter()
+   	  	.append("circle")
+   	  	.attr("cx",function(d){return x(d.parsed_date);})
+   	  	.attr("cy",function(d){return y(d.OnTimePerCent);})
+   	  	.attr("r",3)
+   	  	.attr("fill",function(d) { return color(d.AirportName);})
+   	  	.attr("stroke", function(d) { return color(d.AirportName);})
+   	  	.attr("stroke-width",2)
+   	  	.style("opacity",function(d) {
+      					var found = false;
+      					if(selected_values=="All Airports")
+      						return 0.5;
+      					else {
+      					if(is_selected(d.AirportName,selected_values))	return 0.9;
+      					else  	    return 0.1;
+      					}
+      					})
+   	  	.on('mouseover', tip.show)
+	  	.on('mouseout', tip.hide);
+
+	 //Add the legend. 
+     legend = svg.append("g")
+    	.attr("class","legend")
+    	.attr("transform","translate("+(width-300)+",300)")
+    	.style("font-size","12px")
+    	.call(d3.legend);
+}             
+
+</script>
